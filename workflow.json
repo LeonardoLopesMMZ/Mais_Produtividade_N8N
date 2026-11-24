@@ -1,0 +1,732 @@
+{
+  "name": "Anti-Procrastinação (Telegram + Sheets)",
+  "nodes": [
+    {
+      "parameters": {
+        "updates": [
+          "message"
+        ],
+        "additionalFields": {}
+      },
+      "id": "7a778bc8-4f73-4f62-b2ff-465cd1aceb18",
+      "name": "Telegram Trigger",
+      "type": "n8n-nodes-base.telegramTrigger",
+      "typeVersion": 1.1,
+      "position": [
+        0,
+        300
+      ],
+      "webhookId": "1e74dcf4-6e4b-4687-9d8d-98448ad1f5e5"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Nó \"Parse\": transforma a mensagem do Telegram em um comando estruturado.\n// Formatos: \"/add tarefa | quem pediu | 25/11 | alta\"  (ordem livre depois da tarefa)\n//           \"/feito ab12\"   \"/lista\"   (texto solto sem \"/\" = nova tarefa)\nconst tz = 'America/Sao_Paulo';\nconst msg = $input.first().json.message || {};\nconst chatId = msg.chat && msg.chat.id;\nconst raw = String(msg.text || '').trim();\nconst hoje = new Date().toLocaleDateString('en-CA', { timeZone: tz });\nconst soma = (iso, n) => new Date(Date.parse(iso) + n * 864e5).toISOString().slice(0, 10);\n\nconst m = raw.match(/^\\/(\\w+)(?:@\\w+)?\\s*([\\s\\S]*)$/);\nlet cmd = m ? m[1].toLowerCase() : 'add';\nlet resto = m ? m[2].trim() : raw;\nif (cmd === 'start' || cmd === 'ajuda' || cmd === 'help') cmd = 'ajuda';\nif (cmd === 'adicionar' || cmd === 'nova') cmd = 'add';\nif (cmd === 'concluir' || cmd === 'ok') cmd = 'feito';\nif (!['add', 'feito', 'lista', 'ajuda'].includes(cmd)) cmd = 'ajuda';\nif (cmd === 'add' && !resto) cmd = 'ajuda';\n\nconst out = { cmd, chatId };\nif (cmd === 'feito') out.id = resto.toLowerCase();\nif (cmd === 'add') {\n  const [tarefa, ...extras] = resto.split('|').map(s => s.trim()).filter(Boolean);\n  out.tarefa = tarefa; out.quem = ''; out.prioridade = 'media'; out.prazo = soma(hoje, 1);\n  for (const e of extras) {\n    const k = e.toLowerCase().normalize('NFD').replace(/\\p{M}/gu, '');\n    let d;\n    if (/^(alta|media|baixa)$/.test(k)) out.prioridade = k;\n    else if (k === 'urgente') out.prioridade = 'alta';\n    else if (k === 'hoje') out.prazo = hoje;\n    else if (k === 'amanha') out.prazo = soma(hoje, 1);\n    else if ((d = k.match(/^(\\d{1,2})\\/(\\d{1,2})(?:\\/(\\d{2,4}))?$/))) {\n      let y = d[3] ? +d[3] : +hoje.slice(0, 4); if (y < 100) y += 2000;\n      out.prazo = `${y}-${String(d[2]).padStart(2, '0')}-${String(d[1]).padStart(2, '0')}`;\n      if (!d[3] && out.prazo < hoje) out.prazo = out.prazo.replace(/^\\d{4}/, y + 1); // \"05/01\" em dezembro = ano que vem\n    } else out.quem = e;\n  }\n}\nreturn [{ json: out }];\n"
+      },
+      "id": "52a35ca5-621a-4f4c-8dcf-c6ffc72a4249",
+      "name": "Parse",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        220,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "outputKey": "add",
+              "renameOutput": true,
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "c936c76a-8c67-410c-92d1-892319d64d29",
+                    "leftValue": "={{ $json.cmd }}",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    },
+                    "rightValue": "add"
+                  }
+                ],
+                "combinator": "and"
+              }
+            },
+            {
+              "outputKey": "feito",
+              "renameOutput": true,
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "58b2687e-3805-405f-8d8c-8332e770b934",
+                    "leftValue": "={{ $json.cmd }}",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    },
+                    "rightValue": "feito"
+                  }
+                ],
+                "combinator": "and"
+              }
+            },
+            {
+              "outputKey": "lista",
+              "renameOutput": true,
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "3b282679-be3e-4dc6-aebb-7ece8a71d895",
+                    "leftValue": "={{ $json.cmd }}",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    },
+                    "rightValue": "lista"
+                  }
+                ],
+                "combinator": "and"
+              }
+            }
+          ]
+        },
+        "options": {
+          "fallbackOutput": "extra"
+        }
+      },
+      "id": "a9e344ab-199a-4bac-b644-430a3fb2fdce",
+      "name": "Roteador",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.2,
+      "position": [
+        440,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "sheet",
+        "operation": "read",
+        "documentId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "1ly23ejnGo2LjQda-MY5CDbfkLH0RWyfEUM1OMDDjby8"
+        },
+        "sheetName": {
+          "__rl": true,
+          "mode": "id",
+          "value": "0"
+        }
+      },
+      "id": "8cfa64eb-e018-4366-9e08-a4d75d3bcfbc",
+      "name": "Ler tarefas (add)",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        680,
+        0
+      ],
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "jsCode": "// Nó \"Checar duplicata\": compara a tarefa nova com as PENDENTES da planilha.\n// Duplicada = mesmo texto normalizado, ou >= 70% das palavras relevantes em comum (Jaccard).\nconst p = $('Parse').first().json;\nconst STOP = new Set(['para', 'com', 'uma', 'uns', 'umas', 'por', 'dos', 'das', 'que', 'ver', 'fazer', 'the']);\nconst palavras = s => new Set(String(s || '').toLowerCase().normalize('NFD').replace(/\\p{M}/gu, '')\n  .replace(/[^a-z0-9 ]/g, ' ').split(/\\s+/).filter(w => w.length > 2 && !STOP.has(w)));\nconst sim = (a, b) => {\n  if (!a.size || !b.size) return 0;\n  const inter = [...a].filter(w => b.has(w)).length;\n  return inter / (a.size + b.size - inter);\n};\nconst nova = palavras(p.tarefa);\nconst pendentes = $input.all().map(i => i.json)\n  .filter(r => r.tarefa && String(r.status || '').toLowerCase() === 'pendente');\nconst existente = pendentes.find(r => sim(nova, palavras(r.tarefa)) >= 0.7);\n\nconst id = Date.now().toString(36).slice(-5);\nconst criada_em = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' });\nconst quem = p.quem ? ` (pedido por ${p.quem})` : '';\nreturn [{ json: {\n  ...p, id, criada_em, duplicada: !!existente, existente: existente || null,\n  msgDup: existente ? `⚠️ Já tem algo parecido na lista:\\n• ${existente.tarefa} [${existente.id}] — prazo ${existente.prazo}\\n\\nNão dupliquei. Se for a mesma coisa, manda /feito ${existente.id} quando terminar.` : '',\n  msgOk: `✅ Anotado: ${p.tarefa}${quem}\\n📅 Prazo ${p.prazo} · prioridade ${p.prioridade} · id ${id}\\nAgora são ${pendentes.length + 1} pendentes. Que tal começar por 5 minutos?`,\n} }];\n"
+      },
+      "id": "79a3bb7a-40e4-4ddd-b62e-264fe778414f",
+      "name": "Checar duplicata",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        900,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "784ca70a-4da1-4122-a91d-f8635aab28b4",
+              "leftValue": "={{ $json.duplicada }}",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        }
+      },
+      "id": "52863d25-b905-483a-9cd3-17299215ce22",
+      "name": "Duplicada?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1120,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $('Parse').first().json.chatId }}",
+        "text": "={{ $json.msgDup }}",
+        "additionalFields": {
+          "appendAttribution": false
+        }
+      },
+      "id": "036987a0-9101-4111-8e0f-3a7668e1951b",
+      "name": "Avisar duplicada",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        1340,
+        -100
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "sheet",
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "1ly23ejnGo2LjQda-MY5CDbfkLH0RWyfEUM1OMDDjby8"
+        },
+        "sheetName": {
+          "__rl": true,
+          "mode": "id",
+          "value": "0"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "matchingColumns": [],
+          "schema": [],
+          "value": {
+            "id": "={{ $json.id }}",
+            "tarefa": "={{ $json.tarefa }}",
+            "quem": "={{ $json.quem }}",
+            "prazo": "={{ $json.prazo }}",
+            "prioridade": "={{ $json.prioridade }}",
+            "criada_em": "={{ $json.criada_em }}",
+            "status": "pendente"
+          }
+        },
+        "options": {}
+      },
+      "id": "4dc92103-82af-4978-b884-8784718c971e",
+      "name": "Gravar tarefa",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        1340,
+        100
+      ]
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $('Parse').first().json.chatId }}",
+        "text": "={{ $('Checar duplicata').first().json.msgOk }}",
+        "additionalFields": {
+          "appendAttribution": false
+        }
+      },
+      "id": "948bf005-9917-48c1-a9f7-4f38b5a48327",
+      "name": "Confirmar anotada",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        1560,
+        100
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "sheet",
+        "operation": "read",
+        "documentId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "1ly23ejnGo2LjQda-MY5CDbfkLH0RWyfEUM1OMDDjby8"
+        },
+        "sheetName": {
+          "__rl": true,
+          "mode": "id",
+          "value": "0"
+        }
+      },
+      "id": "eaa3b75a-1db2-47f9-80f0-33fcb6ebf43e",
+      "name": "Ler tarefas (feito)",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        680,
+        300
+      ],
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "jsCode": "// Nó \"Achar tarefa\": localiza a pendente pelo id informado em /feito.\nconst p = $('Parse').first().json;\nconst r = $input.all().map(i => i.json)\n  .find(x => String(x.id || '').toLowerCase() === p.id && String(x.status || '').toLowerCase() === 'pendente');\nreturn [{ json: {\n  achou: !!r, id: p.id, tarefa: r ? r.tarefa : '',\n  concluida_em: new Date().toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' }),\n  msgOk: r ? `🎉 Feito: ${r.tarefa}\\nMais uma fora da lista!` : '',\n  msgNao: `🤔 Não achei pendente com id \"${p.id}\". Manda /lista para ver os ids.`,\n} }];\n"
+      },
+      "id": "7e7ed461-0fb6-4db9-86bd-936d58801368",
+      "name": "Achar tarefa",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        900,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "e7f68343-2c34-4e9e-9ff8-b2439343388d",
+              "leftValue": "={{ $json.achou }}",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        }
+      },
+      "id": "e7ee626c-91e2-4704-b01c-b677ddca05b6",
+      "name": "Achou?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1120,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "sheet",
+        "operation": "update",
+        "documentId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "1ly23ejnGo2LjQda-MY5CDbfkLH0RWyfEUM1OMDDjby8"
+        },
+        "sheetName": {
+          "__rl": true,
+          "mode": "id",
+          "value": "0"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "matchingColumns": [
+            "id"
+          ],
+          "schema": [],
+          "value": {
+            "id": "={{ $json.id }}",
+            "status": "feito",
+            "concluida_em": "={{ $json.concluida_em }}"
+          }
+        },
+        "options": {}
+      },
+      "id": "24a204e6-6196-4cce-b286-1468fb5adcd5",
+      "name": "Marcar feita",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        1340,
+        260
+      ]
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $('Parse').first().json.chatId }}",
+        "text": "={{ $('Achar tarefa').first().json.msgOk }}",
+        "additionalFields": {
+          "appendAttribution": false
+        }
+      },
+      "id": "3563f430-d9c9-4cb5-af3e-eeea72811bd9",
+      "name": "Confirmar feita",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        1560,
+        260
+      ]
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $('Parse').first().json.chatId }}",
+        "text": "={{ $json.msgNao }}",
+        "additionalFields": {
+          "appendAttribution": false
+        }
+      },
+      "id": "f5faadbd-3073-4dde-ba65-90cee37259cb",
+      "name": "Avisar não achou",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        1340,
+        420
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "sheet",
+        "operation": "read",
+        "documentId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "1ly23ejnGo2LjQda-MY5CDbfkLH0RWyfEUM1OMDDjby8"
+        },
+        "sheetName": {
+          "__rl": true,
+          "mode": "id",
+          "value": "0"
+        }
+      },
+      "id": "8d67fdfc-3c4f-4d2c-a9b0-5980b688afb6",
+      "name": "Ler tarefas (resumo)",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        900,
+        620
+      ],
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "jsCode": "// Nó \"Priorizar\": monta o resumo (sapo do dia, atrasadas, Top 3) a partir das pendentes.\n// Score = prioridade + urgência do prazo + 0,2/dia parada na lista (máx. 2): o que você empurra sobe.\nconst tz = 'America/Sao_Paulo';\nconst agora = new Date();\nconst hoje = agora.toLocaleDateString('en-CA', { timeZone: tz });\nconst hora = parseInt(agora.toLocaleString('en-GB', { timeZone: tz, hour: '2-digit', hour12: false }), 10);\n// aceita ISO (2026-11-25) ou dd/mm/aaaa (formato que o Sheets pode devolver)\nconst iso = v => { const s = String(v || '').trim(), d = s.match(/^(\\d{1,2})\\/(\\d{1,2})\\/(\\d{4})$/);\n  return d ? `${d[3]}-${d[2].padStart(2, '0')}-${d[1].padStart(2, '0')}` : s.slice(0, 10); };\nconst dias = (a, b) => Math.round((Date.parse(a) - Date.parse(b)) / 864e5);\nconst P = { alta: 3, media: 2, baixa: 1 };\n\nconst pend = $input.all().map(i => i.json)\n  .filter(r => r.tarefa && String(r.status || '').toLowerCase() === 'pendente')\n  .map(r => {\n    const prazo = iso(r.prazo), falta = prazo ? dias(prazo, hoje) : 3;\n    const parada = r.criada_em ? Math.max(0, dias(hoje, iso(r.criada_em))) : 0;\n    const urg = falta < 0 ? 5 + Math.min(-falta, 5) : falta === 0 ? 4 : falta === 1 ? 2 : falta <= 3 ? 1 : 0;\n    return { ...r, prazo, falta, score: (P[String(r.prioridade).toLowerCase()] || 2) + urg + Math.min(parada * 0.2, 2) };\n  })\n  .sort((a, b) => b.score - a.score);\n\nlet chatId; try { chatId = $('Parse').first().json.chatId; } catch (e) {}\nif (!chatId) try { chatId = $('Config').first().json.chat_id; } catch (e) {}\n\nconst linha = r => `• ${r.tarefa} [${r.id}]${r.quem ? ' · ' + r.quem : ''} — ${r.falta < 0 ? `atrasada ${-r.falta}d` : r.falta === 0 ? 'HOJE' : 'prazo ' + r.prazo}`;\nlet text;\nif (!pend.length) text = '🏖️ Nenhuma pendência. Lista zerada!';\nelse {\n  const atras = pend.filter(r => r.falta < 0), top = pend.slice(0, 3);\n  text = (hora < 12 ? `☀️ Bom dia! ${pend.length} pendente(s).` : `⏰ Check da tarde: ${pend.length} ainda pendente(s).`) +\n    `\\n\\n🐸 Comece por esta (só 5 minutos):\\n${linha(top[0])}` +\n    (atras.length ? `\\n\\n🔥 Atrasadas (${atras.length}):\\n${atras.map(linha).join('\\n')}` : '') +\n    `\\n\\n📌 Top 3:\\n${top.map(linha).join('\\n')}\\n\\nTerminou? /feito id`;\n}\nreturn [{ json: { chatId, text, total: pend.length } }];\n"
+      },
+      "id": "06d12f59-86e2-4779-8152-12febe8b18d5",
+      "name": "Priorizar",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1120,
+        620
+      ]
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $json.chatId }}",
+        "text": "={{ $json.text }}",
+        "additionalFields": {
+          "appendAttribution": false
+        }
+      },
+      "id": "ede11b4d-4413-4f7f-aa3f-855c21cd29ac",
+      "name": "Enviar resumo",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        1340,
+        620
+      ]
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 9,15 * * 1-5"
+            }
+          ]
+        }
+      },
+      "id": "a017096e-42ba-4124-995c-84b3f0a37047",
+      "name": "Agenda 9h e 15h (seg-sex)",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        0,
+        760
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "d50bf2f8-6ace-4882-acff-a742cb5ef95a",
+              "name": "chat_id",
+              "value": "COLE_AQUI_SEU_CHAT_ID",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "0300553c-cf26-469a-b5af-d67fe3575b1d",
+      "name": "Config",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        440,
+        760
+      ]
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $('Parse').first().json.chatId }}",
+        "text": "🧠 Anti-procrastinação\n\n/add tarefa | quem pediu | 25/11 | alta\n(só a tarefa é obrigatória; prazo padrão = amanhã)\n/feito id\n/lista\n\nTexto solto também vira tarefa.",
+        "additionalFields": {
+          "appendAttribution": false
+        }
+      },
+      "id": "6bd4d19c-0acd-49e3-9b16-37706740b380",
+      "name": "Enviar ajuda",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        680,
+        880
+      ]
+    }
+  ],
+  "connections": {
+    "Telegram Trigger": {
+      "main": [
+        [
+          {
+            "node": "Parse",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse": {
+      "main": [
+        [
+          {
+            "node": "Roteador",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Roteador": {
+      "main": [
+        [
+          {
+            "node": "Ler tarefas (add)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Ler tarefas (feito)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Ler tarefas (resumo)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Enviar ajuda",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ler tarefas (add)": {
+      "main": [
+        [
+          {
+            "node": "Checar duplicata",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Checar duplicata": {
+      "main": [
+        [
+          {
+            "node": "Duplicada?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Duplicada?": {
+      "main": [
+        [
+          {
+            "node": "Avisar duplicada",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Gravar tarefa",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Gravar tarefa": {
+      "main": [
+        [
+          {
+            "node": "Confirmar anotada",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ler tarefas (feito)": {
+      "main": [
+        [
+          {
+            "node": "Achar tarefa",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Achar tarefa": {
+      "main": [
+        [
+          {
+            "node": "Achou?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Achou?": {
+      "main": [
+        [
+          {
+            "node": "Marcar feita",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Avisar não achou",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Marcar feita": {
+      "main": [
+        [
+          {
+            "node": "Confirmar feita",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ler tarefas (resumo)": {
+      "main": [
+        [
+          {
+            "node": "Priorizar",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Priorizar": {
+      "main": [
+        [
+          {
+            "node": "Enviar resumo",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Agenda 9h e 15h (seg-sex)": {
+      "main": [
+        [
+          {
+            "node": "Config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Config": {
+      "main": [
+        [
+          {
+            "node": "Ler tarefas (resumo)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "America/Sao_Paulo"
+  },
+  "pinData": {}
+}
