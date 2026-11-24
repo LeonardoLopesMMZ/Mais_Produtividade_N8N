@@ -1,7 +1,6 @@
 # Mais Produtividade N8N: Anti-Procrastinação (Telegram + Google Sheets)
 
-Atividade: criar um fluxo de automação que resolva um problema pessoal, documentá-lo, validar a lógica, deixá-lo funcional e aplicá-lo em produção. O fluxo está **publicado e rodando em produção** no n8n da atividade (`gc-n8n.zncnif.easypanel.host`).
-
+Atividade: criar um fluxo de automação que resolva um problema pessoal, documentá-lo, validar a lógica, deixá-lo funcional e aplicá-lo em produção. O fluxo está **publicado e rodando em produção** no n8n da atividade.
 **Entregáveis**
 - Print da automação: seção [Prints](#prints) abaixo e pasta `prints/`
 - Código de todo o fluxo: `workflow.json` (importável no n8n) e `code/` (lógica dos nós Code)
